@@ -188,8 +188,8 @@ services:
       - 'traefik.http.middlewares.authelia-basic.forwardAuth.trustForwardHeader=true'
       - 'traefik.http.middlewares.authelia-basic.forwardAuth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email'
       # Homepage
-      - homepage.group=User
+      - homepage.group=Auth
       - homepage.name=Authelia
       - homepage.href=https://${AUTHELIA_DOMAIN:-auth.${ROOT_DOMAIN:-traefik.me}}
-      - homepage.description=Authentication verifier
+      - homepage.description=Authentication service
       - homepage.icon=authelia.png

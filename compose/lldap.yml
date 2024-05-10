@@ -73,7 +73,7 @@ services:
       - "traefik.http.services.lldap.loadbalancer.server.port=17170"
       - "traefik.http.services.lldap.loadbalancer.server.scheme=http"
       # Homepage
-      - homepage.group=Authentication
+      - homepage.group=Auth
       - homepage.name=LLDAP
       - homepage.href=https://${LLDAP_DOMAIN:-lldap.${ROOT_DOMAIN:-traefik.me}}
       - homepage.description=User account management
