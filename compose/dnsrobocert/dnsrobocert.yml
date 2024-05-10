@@ -1,0 +1,16 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/dnsrobocert/dnsrobocert.yml' -O /srv/compose/dnsrobocert.yml
+services:
+  dnsrobocert:
+    image: adferrand/dnsrobocert:latest
+    env_file: "dnsrobocert.env"
+    environment:
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-traefik.me}
+    restart: always
+    volumes:
+      - /srv/config/dnsrobocert:/etc/dnsrobocert
+      - /srv/certs:/etc/letsencrypt
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 5
+        max-size: 10m

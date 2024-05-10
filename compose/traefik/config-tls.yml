@@ -1,0 +1,8 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/traefik/config-tls.yml' -O /srv/config/traefik/tls.yml
+
+tls:
+  certificates:
+    - certFile: /certs/live/<domain>/fullchain.pem
+      keyFile: /certs/live/<domain>/privkey.pem
+    - certFile: /certs/live/<other-domain>/fullchain.pem
+      keyFile: /certs/live/<other-domain>/privkey.pem

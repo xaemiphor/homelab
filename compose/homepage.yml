@@ -1,0 +1,39 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/homepage.yml' -O /srv/compose/homepage.yml
+services:
+  init-homepage:
+    image: ${INIT_IMAGE:-alpine:latest}
+    volumes:
+      - "${CONFIG_ROOT:-./config}/homepage:/app/config"
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        if [ ! -e /app/config/docker.yaml ]; then
+          echo -e 'my-docker:\n  socket: /var/run/docker.sock' > /app/config/docker.yaml
+        fi ;
+        for x in 'bookmarks.yaml' 'services.yaml'; do
+          if [ ! -e "/app/config/$${x}" ]; then
+            touch "/app/config/$${x}"
+          fi
+        done
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    depends_on:
+      init-homepage:
+        condition: service_started
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${CONFIG_ROOT:-./config}/homepage:/app/config"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homepage.entrypoints=web,websecure"
+      - "traefik.http.routers.homepage.rule=HostRegexp(`${HOMEPAGE_DOMAIN:-homepage.${ROOT_DOMAIN:-traefik.me}}`)"
+      - "traefik.http.routers.homepage.priority=1"
+      - "traefik.http.routers.homepage.service=homepage"
+      - "traefik.http.routers.homepage.tls=true"
+
+      - "traefik.http.services.homepage.loadbalancer.server.port=3000"
+      - "traefik.http.services.homepage.loadbalancer.server.scheme=http"
+
+      - "traefik.http.routers.homepage.middlewares=authelia@docker"

@@ -1,0 +1,24 @@
+# mkdir /srv/config/dnsrobocert
+# wget 'https://xaemiphor.github.io/homelab/compose/dnsrobocert/config.yml' -O /srv/config/dnsrobocert/config.yml
+draft: false
+acme:
+  email_account: ${LE_ACME_EMAIL}
+  staging: ${LE_ACME_STAGING}
+  certs_permissions:
+    files_mode: 0644
+    dirs_mode: 0755
+    user: nobody
+    group: nogroup
+profiles:
+- name: vultr_profile
+  provider: 'vultr'
+  provider_options:
+    auth_username: USER
+    auth_password: PASSWD
+    auth_token: ${VULTR_API_KEY}
+certificates:
+- name: ${ROOT_DOMAIN}
+  profile: vultr_profile
+  domains:
+    - ${ROOT_DOMAIN}
+    - "*.${ROOT_DOMAIN}"

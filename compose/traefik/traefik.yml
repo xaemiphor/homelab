@@ -1,0 +1,57 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/traefik/traefik.yml' -O /srv/compose/traefik.yml
+
+services:
+  traefik:
+    restart: always
+    image: "traefik:v2.11"
+    env_file: "traefik.env"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/srv/certs:/certs:ro"
+      - "/srv/config/traefik:/config"
+      - "/srv/data/traefik/acme:/acme"
+      - "/srv/log/traefik:/var/log"
+    command:
+# CFG sources
+      - "--providers.file.watch=true"
+      - "--providers.file.directory=/config"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+
+# Listen on 80/443
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.web.forwardedHeaders.trustedIPs=127.0.0.1/32,172.16.0.0/12"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.websecure.forwardedHeaders.trustedIPs=127.0.0.1/32,172.16.0.0/12"
+
+# Redirect http to https
+      - "--entryPoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entryPoints.web.http.redirections.entrypoint.scheme=https"
+
+      - "--serverstransport.insecureskipverify=true"
+      - "--log.filePath=/var/log/traefik.log"
+
+# Healthcheck
+      - "--ping=true"
+      - "--ping.entryPoint=ping"
+      - "--entryPoints.ping.address=:8082"
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+    labels:
+      - "traefik.enable=true"
+    healthcheck:
+      interval: "30s"
+      start_period: "5m"
+      test: ["CMD", "traefik", "healthcheck", "--entryPoints.ping.address=:8082", "--ping.entryPoint=ping"]
+      timeout: "3s"
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 5
+        max-size: 10m

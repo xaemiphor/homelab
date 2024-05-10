@@ -1,0 +1,10 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/traefik/config-letsencrypt.yml' -O /srv/config/traefik/letsencrypt.yml
+
+certificatesResolvers:
+  le:
+    acme:
+      email: "<email>"
+      storage: "/acme/acme.json"
+      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory" # Comment out to use production
+      dnsChallenge:
+        provider: vultr

@@ -1,0 +1,195 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/authelia.yml' -O /srv/compose/authelia.yml
+services:
+  init-authelia:
+    image: ${INIT_IMAGE:-alpine:latest}
+    volumes:
+      - /srv/config/authelia:/config
+      - /srv/secrets/authelia:/secrets
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        if [ ! -e /secrets/AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PRIVATE_KEY.pem ]; then
+          apk add --no-cache openssl
+          openssl genrsa -out /secrets/AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PRIVATE_KEY.pem 4096
+          openssl rsa -in /secrets/AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PRIVATE_KEY.pem -outform PEM -pubout -out /secrets/AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PUBLIC_KEY.pem
+        fi
+  post-authelia:
+    image: ${INIT_IMAGE:-alpine:latest}
+    depends_on:
+      authelia:
+        condition: service_started
+    volumes:
+      - /srv/config/authelia:/config
+      - /srv/secrets/authelia:/secrets
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        while [ ! -e /config/configuration.yml ]; do
+          sleep 1s
+        done ;
+        if [ -e /config/configuration.yml ]; then
+          apk add --no-cache yq
+          yq -i '... comments=""' /config/configuration.yml
+          yq -i '.identity_providers.oidc.cors = {"endpoints": ["authorization", "token", "revocation", "introspection", "userinfo"], "allowed_origins": ["*"]}' /config/configuration.yml
+          #yq -i '.identity_providers.oidc.jwks = [{"key": "{{ secret \"/secrets/AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PRIVATE_KEY.pem\" | mindent 10 \"|\" | msquote }}"}]' /config/configuration.yml
+          yq -i '.identity_providers.oidc.jwks = [{"key": load_str("/secrets/AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PRIVATE_KEY.pem")}]' /config/configuration.yml
+          # TODO Have client services configure this directly?
+        fi
+  authelia-redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: always
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - "/srv/data/authelia-redis:/data"
+    environment:
+      AUTHELIA_REDIS_PASSWORD: "${AUTHELIA_REDIS_PASSWORD:?error}"
+    command: /bin/sh -c "redis-server --save 60 1 --loglevel warning --requirepass $${AUTHELIA_REDIS_PASSWORD}"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 2
+        max-size: 5m
+  authelia-pg:
+    image: ${PG_IMAGE:-postgres:16.1-alpine}
+    restart: always
+    environment:
+      - POSTGRES_DB=${AUTHELIA_PSQL_DB:-authelia}
+      - POSTGRES_USER=${AUTHELIA_PSQL_USER:-authelia}
+      - POSTGRES_PASSWORD=${AUTHELIA_PSQL_PASSWORD:?error}
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - "/srv/data/authelia-pg:/var/lib/postgresql/data"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 2
+        max-size: 5m
+  authelia:
+    image: authelia/authelia:latest
+    restart: unless-stopped
+    links:
+      - "docker-mailserver:${DMS_DOMAIN:-mail.${ROOT_DOMAIN:-traefik.me}}"
+    depends_on:
+      lldap:
+        condition: service_healthy
+      authelia-pg:
+        condition: service_healthy
+      authelia-redis:
+        condition: service_healthy
+      init-authelia:
+        condition: service_completed_successfully
+      docker-mailserver:
+        condition: service_healthy
+    expose:
+      - 9091
+#    ports:
+#      - 9091:9091
+    volumes:
+      - /srv/config/authelia:/config
+      - /srv/secrets/authelia:/secrets
+    environment:
+      UID: ${PUID:-1000}
+      GID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+
+      AUTHELIA_LOG_LEVEL: "${AUTHELIA_LOG_LEVEL:-info}"
+      X_AUTHELIA_CONFIG_FILTERS: "template"
+
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET: ${AUTHELIA_JWT_SECRET:?error}
+      AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY:?error}
+
+      AUTHELIA_THEME: ${AUTHELIA_THEME:-dark}
+      AUTHELIA_ACCESS_CONTROL_DEFAULT_POLICY: "${AUTHELIA_ACCESS_CONTROL_DEFAULT_POLICY:-one_factor}"
+
+      #AUTHELIA_NOTIFIER_FILESYSTEM_FILENAME: "/config/notification.txt"
+      #AUTHELIA_NOTIFIER_SMTP_HOST: ${DMS_DOMAIN:-mail.${ROOT_DOMAIN:-traefik.me}}
+      #AUTHELIA_NOTIFIER_SMTP_PORT: 587
+      AUTHELIA_NOTIFIER_SMTP_ADDRESS: "submission://${DMS_DOMAIN:-mail.${ROOT_DOMAIN:-traefik.me}}:587"
+      AUTHELIA_NOTIFIER_SMTP_USERNAME: ${AUTHELIA_NOTIFIER_SMTP_USERNAME:-authelia}
+      AUTHELIA_NOTIFIER_SMTP_PASSWORD: "${AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD:?error}"
+      AUTHELIA_NOTIFIER_SMTP_SENDER: ${AUTHELIA_NOTIFIER_SMTP_SENDER:-${AUTHELIA_NOTIFIER_SMTP_USERNAME:-authelia}@${ROOT_DOMAIN:-traefik.me}}
+
+      #AUTHELIA_STORAGE_POSTGRES_HOST: authelia-pg
+      AUTHELIA_STORAGE_POSTGRES_ADDRESS: "tcp://authelia-pg:5432"
+      AUTHELIA_STORAGE_POSTGRES_DATABASE: ${AUTHELIA_PSQL_DB:-authelia}
+      AUTHELIA_STORAGE_POSTGRES_USERNAME: ${AUTHELIA_PSQL_USER:-authelia}
+      AUTHELIA_STORAGE_POSTGRES_PASSWORD: ${AUTHELIA_PSQL_PASSWORD:?error}
+
+      # TODO https://www.authelia.com/blog/4.38-release-notes/#multi-domain-protection
+      AUTHELIA_DEFAULT_REDIRECTION_URL: "https://${AUTHELIA_DOMAIN:-auth.${ROOT_DOMAIN:-traefik.me}}"
+      AUTHELIA_SESSION_DOMAIN: "${AUTHELIA_SESSION_DOMAIN:-${ROOT_DOMAIN:-traefik.me}}"
+      AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET:?error}
+
+      AUTHELIA_SESSION_REDIS_HOST: "authelia-redis"
+      AUTHELIA_SESSION_REDIS_PORT: "6379"
+      #AUTHELIA_SESSION_REDIS_ADDRESS: "tcp://authelia-redis:6379"
+      AUTHELIA_SESSION_REDIS_PASSWORD: "${AUTHELIA_REDIS_PASSWORD:?error}"
+
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_IMPLEMENTATION: custom
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_ADDRESS: "${DMS_LDAP_SERVER_HOST:-ldap://lldap:3890}"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_TIMEOUT: "-5s"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_START_TLS: "false"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_BASE_DN: "${LDAP_BASE_DN:-dc=traefik,dc=me}"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_ADDITIONAL_USERS_DN: "ou=people"
+      #AUTHELIA_AUTHENTICATION_BACKEND_LDAP_USERS_FILTER: "(&({username_attribute}={input})(objectClass=person))"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_USERS_FILTER: "(&(|({username_attribute}={input})({mail_attribute}={input}))(objectClass=person))" # ENV VAR expansion sucks
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_ADDITIONAL_GROUPS_DN: "ou=groups"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_GROUPS_FILTER: "(member={dn})"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_ATTRIBUTES_USERNAME: "uid"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_ATTRIBUTES_GROUP_NAME: "cn"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_ATTRIBUTES_MAIL: "mail"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_ATTRIBUTES_DISPLAY_NAME: "displayName"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_USER: "${AUTHELIA_AUTHENTICATION_BACKEND_LDAP_USER:-uid=authelia,ou=people,${LDAP_BASE_DN:-dc=traefik,dc=me}}"
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD: "${AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD:?error}"
+
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET: "${AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET:?error}"
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_LIFESPANS_ACCESS_TOKEN: '1h'
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_LIFESPANS_AUTHORIZE_CODE: '1m'
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_LIFESPANS_ID_TOKEN: '1h'
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_LIFESPANS_REFRESH_TOKEN: '90m'
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_ENABLE_CLIENT_DEBUG_MESSAGES: true
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_MINIMUM_PARAMETER_ENTROPY: '8'
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_ENFORCE_PKCE: public_clients_only
+      #AUTHELIA_IDENTITY_PROVIDERS_OIDC_ENABLE_PKCE_PLAIN_CHALLENGE: ''
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS: false
+      #AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PRIVATE_KEY_FILE: /secrets/AUTHELIA_IDENTITY_PROVIDERS_OIDC_ISSUER_PRIVATE_KEY.pem
+
+      AUTHELIA_NTP_ADDRESS: ${AUTHELIA_NTP_ADDRESS:-pool.ntp.org:123}
+      AUTHELIA_NTP_DISABLE_FAILURE: ${AUTHELIA_NTP_DISABLE_FAILURE:-true}
+
+      AUTHELIA_TOTP_ISSUER: ${AUTHELIA_TOTP_ISSUER:-${ROOT_DOMAIN:-traefik.me}}
+
+    labels:
+      # Traefik
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.authelia.rule=Host(`${AUTHELIA_DOMAIN:-auth.${ROOT_DOMAIN:-traefik.me}}`)'
+      - 'traefik.http.routers.authelia.entrypoints=websecure'
+      - 'traefik.http.routers.authelia.tls=true'
+
+      - 'traefik.http.middlewares.authelia.forwardAuth.address=http://authelia:9091/api/verify?rd=https%3A%2F%2F${AUTHELIA_DOMAIN:-auth.${ROOT_DOMAIN:-traefik.me}}'
+      - 'traefik.http.middlewares.authelia.forwardAuth.trustForwardHeader=true'
+      - 'traefik.http.middlewares.authelia.forwardAuth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email'
+
+      - 'traefik.http.middlewares.authelia-basic.forwardAuth.address=http://authelia:9091/api/verify?auth=basic'
+      - 'traefik.http.middlewares.authelia-basic.forwardAuth.trustForwardHeader=true'
+      - 'traefik.http.middlewares.authelia-basic.forwardAuth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email'
+      # Homepage
+      - homepage.group=User
+      - homepage.name=Authelia
+      - homepage.href=https://${AUTHELIA_DOMAIN:-auth.${ROOT_DOMAIN:-traefik.me}}
+      - homepage.description=Authentication verifier
+      - homepage.icon=authelia.png

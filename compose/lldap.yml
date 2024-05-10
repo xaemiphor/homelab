@@ -1,0 +1,79 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/lldap.yml' -O /srv/compose/lldap.yml
+services:
+  lldap-pg:
+    image: ${PG_IMAGE:-postgres:16.1-alpine}
+    restart: always
+    environment:
+      - POSTGRES_DB=${LLDAP_PSQL_DB:-lldap}
+      - POSTGRES_USER=${LLDAP_PSQL_USER:-lldap}
+      - POSTGRES_PASSWORD=${LLDAP_PSQL_PASSWORD:?error}
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - "/srv/data/lldap-pg:/var/lib/postgresql/data"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 2
+        max-size: 5m
+
+  lldap:
+    image: lldap/lldap:stable
+    restart: always
+    depends_on:
+      lldap-pg:
+        condition: service_healthy
+      traefik:
+        condition: service_healthy
+    ports:
+      - "636:6360"
+    volumes:
+      - /srv/data/lldap:/data
+      - /srv/certs:/certs:ro
+    environment:
+      - UID=${PUID:-1000}
+      - GID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
+
+      - LLDAP_LDAP_USER_DN=${LLDAP_LDAP_USER_DN:-admin}
+      - LLDAP_LDAP_USER_EMAIL=${LLDAP_LDAP_USER_EMAIL:-}
+      - LLDAP_LDAP_USER_PASS=${LLDAP_LDAP_USER_PASS:?error}
+
+      - LLDAP_JWT_SECRET=${LLDAP_JWT_SECRET:?error}
+      - LLDAP_KEY_SEED=${LLDAP_KEY_SEED:?error}
+      - LLDAP_LDAP_BASE_DN=${LDAP_BASE_DN:-dc=traefik,dc=me}
+      - LLDAP_VERBOSE=${LLDAP_VERBOSE:-false}
+      - LLDAP_HTTP_URL=https://${LLDAP_DOMAIN:-lldap.${ROOT_DOMAIN:-traefik.me}}
+
+      - LLDAP_SMTP_OPTIONS__enable_password_reset=${LLDAP_ENABLE_PASSWORDRESET:-false}
+      - LLDAP_SMTP_OPTIONS__server=${MAILSERVER_DOMAIN:-mail.${ROOT_DOMAIN:-traefik.me}}
+      - LLDAP_SMTP_OPTIONS__smtp_encryption=STARTTLS
+      - LLDAP_SMTP_OPTIONS__user=${LLDAP_SMTP_USER:-lldap}
+      - LLDAP_SMTP_OPTIONS__from=${LLDAP_SMTP_FROM:-lldap@${ROOT_DOMAIN:-traefik.me}}
+      - LLDAP_SMTP_OPTIONS__password=${LLDAP_SMTP_PASSWORD:-insecure_string_for_testing}
+
+      - LLDAP_LDAPS_OPTIONS__ENABLED=${LLDAP_LDAPS_ENABLE:-true}
+      - LLDAP_LDAPS_OPTIONS__CERT_FILE=${LLDAP_LDAPS_CERTFILE:-/certs/live/${ROOT_DOMAIN:-traefik.me}/fullchain.pem}
+      - LLDAP_LDAPS_OPTIONS__KEY_FILE=${LLDAP_LDAPS_KEYFILE:-/certs/live/${ROOT_DOMAIN:-traefik.me}/privkey.pem}
+      # You can also set a different database:
+      - LLDAP_DATABASE_URL=postgres://${LLDAP_PSQL_USER:-lldap}:${LLDAP_PSQL_PASSWORD:?error}@lldap-pg/${LLDAP_PSQL_DB:-lldap}
+    labels:
+      # Traefik
+      - traefik.enable=true
+      - "traefik.http.routers.lldap.entrypoints=websecure"
+      - "traefik.http.routers.lldap.priority=201"
+      - "traefik.http.routers.lldap.rule=(Host(`${LLDAP_DOMAIN:-lldap.${ROOT_DOMAIN:-traefik.me}}`))"
+      - "traefik.http.routers.lldap.service=lldap"
+      - "traefik.http.routers.lldap.tls=true"
+      - "traefik.http.services.lldap.loadbalancer.server.port=17170"
+      - "traefik.http.services.lldap.loadbalancer.server.scheme=http"
+      # Homepage
+      - homepage.group=Authentication
+      - homepage.name=LLDAP
+      - homepage.href=https://${LLDAP_DOMAIN:-lldap.${ROOT_DOMAIN:-traefik.me}}
+      - homepage.description=User account management

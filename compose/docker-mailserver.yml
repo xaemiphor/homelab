@@ -1,0 +1,105 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/docker-mailserver.yml' -O /srv/compose/docker-mailserver.yml
+services:
+  init-docker-mailserver:
+    image: ${INIT_IMAGE:-alpine:latest}
+    volumes:
+      - /srv/config/docker-mailserver:/tmp/docker-mailserver/
+    environment:
+      - "SSL_DOMAIN=${DMS_SSL_DOMAIN:-${ROOT_DOMAIN:-traefik.me}}"
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        cat <<'EOF' > /tmp/docker-mailserver/user-patches.sh
+          #!/bin/bash
+          function lineinfile(){
+            if [[ $$# != 3 ]];then
+              local THIS_FUNC_NAME="$${funcstack[1]-}$${FUNCNAME[0]-}"
+              echo "$$THIS_FUNC_NAME - 3 arguments are expected. given $$#. args=[$$@]" >&2
+              echo "usage: $$THIS_FUNC_NAME PATTERN LINE FILE" >&2
+              return 1
+            fi
+            local PATTERN="$$1"
+            local LINE="$$2"
+            local FILE="$$3"
+            if grep -E -q "$${PATTERN}" "$${FILE}" ;then
+              PATTERN="$${PATTERN}" LINE="$${LINE}" perl -i -nle 'if(/$$ENV{"PATTERN"}/){print $$ENV{"LINE"}}else{print}' "$${FILE}"
+            else
+              echo "$$LINE" >> "$$FILE"
+            fi
+          }
+
+          # Allows postfix to treat local domain as normal mail target
+          echo '' > /etc/postfix/vhost
+
+          # Drops `mail` attribute in favor of uid@domain
+          lineinfile '^result_attribute =.*' 'result_attribute = uid' /etc/postfix/ldap-users.cf
+          lineinfile '^result_format =.*' "result_format = %s@$${SSL_DOMAIN}" /etc/postfix/ldap-users.cf
+
+          postfix reload
+        EOF
+  docker-mailserver:
+    image: ghcr.io/docker-mailserver/docker-mailserver:latest
+    hostname: "${DMS_DOMAIN:-mail.${ROOT_DOMAIN:-traefik.me}}"
+    restart: always
+    stop_grace_period: 1m
+    depends_on:
+      init-docker-mailserver:
+        condition: service_completed_successfully
+      lldap:
+        condition: service_healthy
+    ports:
+      - "465:465"
+      - "587:587"
+    healthcheck:
+      test: "ss --listening --tcp | grep -P 'LISTEN.+:smtp' || exit 1"
+      timeout: 3s
+      retries: 0
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /srv/acme/acme.json:/etc/letsencrypt/acme.json:ro
+      - /srv/certs:/etc/letsencrypt:ro
+      - /srv/config/docker-mailserver:/tmp/docker-mailserver/
+      - /srv/config/docker-mailserver/data:/var/mail
+      - /srv/config/docker-mailserver/state:/var/mail-state
+    cap_add:
+      - SYS_PTRACE
+      - NET_ADMIN # For Fail2Ban to work
+    environment:
+      - "SSL_DOMAIN=${DMS_SSL_DOMAIN:-${ROOT_DOMAIN:-traefik.me}}"
+      - SSL_TYPE=${DMS_SSL_TYPE:-manual} # Set to letsencrypt to extract keys from traefik acme.json files
+      - SSL_CERT_PATH=${DMS_SSL_CERT_PATH:-/etc/letsencrypt/live/${ROOT_DOMAIN:-traefik.me}/fullchain.pem}
+      - SSL_KEY_PATH=${DMS_SSL_KEY_PATH:-/etc/letsencrypt/live/${ROOT_DOMAIN:-traefik.me}/privkey.pem}
+
+      - LOG_LEVEL=${DMS_LOG_LEVEL:-info}
+      - SUPERVISOR_LOGLEVEL=${DMS_SUPERVISOR_LOGLEVEL:-info}
+
+      - SPAMASSASSIN_SPAM_TO_INBOX=1
+      - SPOOF_PROTECTION=1
+
+      - SMTP_ONLY=1
+      - ENABLE_IMAP=0
+      - ENABLE_FAIL2BAN=0 # Should enable when things are up and running
+      - ENABLE_AMAVIS=0
+      - ENABLE_OPENDKIM=0
+      - ENABLE_OPENDMARC=0
+      - ACCOUNT_PROVISIONER=LDAP
+
+      - LDAP_SERVER_HOST=${DMS_LDAP_SERVER_HOST:-ldap://lldap:3890}
+      - LDAP_BIND_DN=${DMS_LDAP_BIND_DN:-uid=docker-mailserver,ou=people,${LDAP_BASE_DN:-dc=traefik,dc=me}}
+      - LDAP_BIND_PW=${DMS_LDAP_BIND_PW:-insecure_string_for_testing}
+      - LDAP_SEARCH_BASE=ou=people,${LDAP_BASE_DN:-dc=traefik,dc=me}
+
+      - LDAP_QUERY_FILTER_DOMAIN=(|) # Disables extracting domains from all user's mail attribute
+      - LDAP_QUERY_FILTER_USER=(&(uid=%U)(objectClass=person)(memberof=cn=user_mailserver,ou=groups,${LDAP_BASE_DN:-dc=traefik,dc=me})) # Is modified by user-script to report the email as uid@domain, ENV VAR expansion sucks
+      - LDAP_QUERY_FILTER_GROUP=(|)
+      - LDAP_QUERY_FILTER_ALIAS=(|)
+
+      - ENABLE_SASLAUTHD=1
+      - SASLAUTHD_MECHANISMS=ldap
+      - SASLAUTHD_LDAP_SERVER=${DMS_LDAP_SERVER_HOST:-ldap://lldap:3890}
+      - SASLAUTHD_LDAP_BIND_DN=${DMS_LDAP_BIND_DN:-uid=docker-mailserver,ou=people,${LDAP_BASE_DN:-dc=traefik,dc=me}}
+      - SASLAUTHD_LDAP_PASSWORD=${DMS_LDAP_BIND_PW:-insecure_string_for_testing}
+      - SASLAUTHD_LDAP_FILTER=(&(uid=%U)(objectClass=person)(memberof=cn=user_mailserver,ou=groups,${LDAP_BASE_DN:-dc=traefik,dc=me})) # ENV VAR expansion sucks
+
+      - POSTMASTER_ADDRESS=${DMS_POSTMASTER_ADDRESS:-postmaster@${ROOT_DOMAIN}}

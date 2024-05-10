@@ -1,0 +1,15 @@
+# /srv/config/authelia/configuration.yml
+...
+      - id: headscale-webui
+        description: Headscale WebUI
+        secret: [SECRET]
+        public: false
+        authorization_policy: one_factor
+        token_endpoint_auth_method: client_secret_post
+        redirect_uris:
+          - https://[DOMAIN]/[SCRIPT_NAME]/oidc_callback
+        scopes:
+          - openid
+          - profile
+          - email
+

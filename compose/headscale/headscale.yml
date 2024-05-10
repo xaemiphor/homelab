@@ -1,0 +1,51 @@
+# /srv/compose/headscale.yml
+# TODO - Docker healthchecks
+# TODO - Headscale env -> config script maybe?
+services:
+  headscale-pg:
+    image: ${PG_IMAGE:-postgres:16.1-alpine}
+    restart: always
+    environment:
+      - POSTGRES_DB=${HEADSCALE_PSQL_DB:-headscale}
+      - POSTGRES_USER=${HEADSCALE_PSQL_USER:-headscale}
+      - POSTGRES_PASSWORD=${HEADSCALE_PSQL_PASSWORD:?error}
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - "/srv/data/headscale-pg:/var/lib/postgresql/data"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 2
+        max-size: 5m
+
+  headscale:
+    image: headscale/headscale:0.23.0-alpha9
+    links:
+      - "traefik:${AUTHELIA_DOMAIN:-auth.${ROOT_DOMAIN:-traefik.me}}"
+    command: serve -c /etc/headscale/config.yaml
+    depends_on:
+      headscale-pg:
+        condition: service_healthy
+      authelia:
+        condition: service_healthy
+    volumes:
+      - /srv/config/headscale:/etc/headscale
+      - /srv/data/headscale:/var/lib/headscale
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 5
+        max-size: 10m
+    labels:
+      # Traefik
+      - "traefik.enable=true"
+      - "traefik.http.routers.headscale.entrypoints=websecure"
+      - 'traefik.http.routers.headscale.tls=true'
+      - "traefik.http.routers.headscale.rule=Host(`${HEADSCALE_DOMAIN:-headscale.${ROOT_DOMAIN:-traefik.me}}`) && PathPrefix(`/`)"
+      - "traefik.http.services.headscale.loadbalancer.server.port=8080"
