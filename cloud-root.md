@@ -114,11 +114,11 @@ Simple at-a-glance dashboard
 [homepage.yml](compose/homepage.yml ':include :type=code yaml')
 
 ## Setup Headscale
-VPN mesh solution
+VPN mesh solution.
 
 ### Prepare configuration
 
-!> This is just copy-pasted from upstream example, still needs oidc configured
+!> This is mostly copy-pasted from upstream example, still needs oidc configured
 
 [headscale-config.yml](compose/headscale/config.yaml ':include :type=code yaml')
 
@@ -129,6 +129,17 @@ VPN mesh solution
 [authelia-headscale.yml](compose/headscale/authelia.yml ':include :type=code yaml')
 
 ### Prepare compose file
+
 [headscale.yml](compose/headscale/headscale.yml ':include :type=code yaml')
 
+
 ## Setup Teleport
+Centralized remote shell
+
+### Prepare compose file
+
+[teleport.yml](compose/teleport/teleport.yml ':include :type=code yaml')
+
+### Prepare config file
+
+[teleport-config.yml](compose/teleport/config.yaml ':include :type=code yaml')

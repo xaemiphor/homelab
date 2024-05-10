@@ -1,0 +1,39 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/teleport/config.yaml' -O /srv/config/teleport/teleport.yaml
+version: v3
+teleport:
+  data_dir: /var/lib/teleport
+  log:
+    severity: WARN
+    output: stderr
+    format:
+      output: text
+      extra_fields: ["timestamp","level","component","caller"]
+  storage:
+    type: dir
+    audit_events_uri: []
+#    audit_events_uri: ['file:///var/lib/teleport/log']
+    audit_retention_period: 2d
+    retention_period: 2d
+auth_service:
+  enabled: true
+  cluster_name: ${TELEPORT_DOMAIN}
+  listen_addr: 0.0.0.0:3025
+  authentication:
+    second_factor: off
+#    type: github
+  proxy_listener_mode: multiplex
+  proxy_protocol: off
+proxy_service:
+  enabled: true
+  web_listen_addr: 0.0.0.0:443
+  public_addr: '${TELEPORT_DOMAIN}:443'
+  https_keypairs: []
+  https_keypairs_reload_interval: 0s
+  trust_x_forwarded_for: true
+  acme:
+    enabled: "no"
+  proxy_protocol: off
+ssh_service:
+  enabled: false
+kubernetes_service:
+  enabled: false

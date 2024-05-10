@@ -1,0 +1,22 @@
+# wget 'https://xaemiphor.github.io/homelab/compose/teleport/teleport.yml' -O /srv/compose/teleport.yml
+services:
+  teleport:
+    image: public.ecr.aws/gravitational/teleport-distroless:${TELEPORT_VERSION:-15.3.1}
+    restart: always
+    volumes:
+      - /srv/config/teleport:/etc/teleport
+      - /srv/data/teleport:/var/lib/teleport
+      - /srv/certs:/etc/letsencrypt:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 5
+        max-size: 10m
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.teleport.entrypoints=websecure"
+      - "traefik.http.routers.teleport.rule=HostSNIRegexp(`{subdomain:[0-z_-]+}.${TELEPORT_DOMAIN:-teleport.${ROOT_DOMAIN:-traefik.me}}`,`${TELEPORT_DOMAIN:-teleport.${ROOT_DOMAIN:-traefik.me}}`,`{subdomain:[a-z0-9]+}.teleport.cluster.local`)"
+      - "traefik.http.routers.teleport.service=teleport"
+      - "traefik.http.routers.teleport.tls=true"
+      - "traefik.http.services.teleport.loadbalancer.server.port=443"
+      - "traefik.http.services.teleport.loadbalancer.server.scheme=https"

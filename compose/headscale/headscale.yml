@@ -1,4 +1,4 @@
-# /srv/compose/headscale.yml
+# wget 'https://xaemiphor.github.io/homelab/compose/headscale/headscale.yml' -O /srv/compose/headscale.yml
 # TODO - Docker healthchecks
 # TODO - Headscale env -> config script maybe?
 services:
