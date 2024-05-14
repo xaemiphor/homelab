@@ -36,12 +36,6 @@ https://github.com/adferrand/dnsrobocert
 
 [dnsrobocert-config.yml](compose/dnsrobocert/config.yml ':include :type=code yaml')
 
-### Launch
-
-```bash
-cd /srv/compose && docker-compose up -d
-```
-
 ## Setup traefik
 
 Reverse proxy
@@ -65,12 +59,6 @@ Reverse proxy
 #### LetsEncrypt
 
 [traefik-config-letsencrypt.yml](compose/traefik/config-letsencrypt.yml ':include :type=code yaml')
-
-### Launch
-
-```bash
-cd /srv/compose && docker-compose up -d
-```
 
 ## Setup lldap
 
