@@ -8,7 +8,7 @@ Logically order of operations are:
 !> So far, this trips the dm-verity complaint and declares security level "Orange". So every reboot needs you to press the power button in the first 5s, and then it delays another 5s before startup. I haven't yet figured out a solution to this yet. The dm-verity complaint could be due to being unlocked without Lenovo's official `sn.img` file, I have no idea.
 
 ## Stock firmware bundles
-```
+```md5
 52d5511d000440e02a54826be33971bf  TB330FU_ROW_OPEN_USER_V14.218_T_ZUI_15.1.072_ST_231208.zip
 c476729184e1f8dc65bed72e978f4ed3  TB330FU_ROW_OPEN_USER_V15.155_U_ZUI_16.0.070_ST_240711.zip
 ```
@@ -49,6 +49,7 @@ c476729184e1f8dc65bed72e978f4ed3  TB330FU_ROW_OPEN_USER_V15.155_U_ZUI_16.0.070_S
      * `apt-get update; apt-get -y install adb fastboot`
 2. Download + Boot into `re_livedvdV4.iso`
    * I could not get my Tablet to pass through VirtalBox in a way to be usable, as the device cycles a number of different USB devices
+   * Updated mtkclient by `cd /opt/mtkclient ; git checkout requirements.txt ; git pull ; pip3 install -r requirements.txt`
 3. Enable `OEM Unlock` in Developers menu
 4. Power down tablet
 5. Plug in data cable, but don't power up the tablet
