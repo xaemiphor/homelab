@@ -10,10 +10,10 @@
 2. Install Magisk apk
    * `adb install #magisk.apk`
 3. Copy boot.img to device
-   * `adb push boot.img /sdcard/Downloads`
+   * `adb push boot.img /sdcard/Download`
 4. Use Magisk app to modify boot.img
 5. Download the resulting file
-   * `adb pull /sdcard/Downloads/$(adb ls /sdcard/Downloads/magisk.*img)`
+   * `adb pull $(adb shell ls /sdcard/Download/magisk*img)`
 6. Reboot into bootloader
    * `adb reboot bootloader`
 7. Flash the modified bootloader
