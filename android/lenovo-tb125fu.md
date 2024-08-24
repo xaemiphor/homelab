@@ -18,7 +18,7 @@ bf7e87373410514d23dd74c3e445f5e9  TB125FU_S100105_230920_ROW.zip
 
 1. Enable `OEM Unlock` in Developers menu
 2. Reboot into bootloader
-   * `adb reboot fastboot`
+   * `adb reboot bootloader`
 3. Unlock the bootloader
    * `fastboot flashing unlock`
    * Tablet screen will display a warning and expect the user to press the VolUp button twice to proceed, there is a timelimit
